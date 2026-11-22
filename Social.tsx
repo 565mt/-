@@ -1,0 +1,32 @@
+import GlobalLeadSearch from './GlobalLeadSearch'
+import {sourceConversation} from './SalesDesk'
+import {useEffect,useState,type FormEvent} from 'react'
+type Row=Record<string,any>
+const stages=['待筛选','待沟通','已联系','报价中','已成交','已关闭']
+async function request(path:string,body?:unknown){
+ const r=await fetch('/api/social/'+path,body===undefined?{}:{method:'POST',headers:body instanceof FormData?{}:{'Content-Type':'application/json'},body:body instanceof FormData?body:JSON.stringify(body)})
+ const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:'请求失败');return data
+}
+export default function Social(){
+ const [rows,S]=useState<Row[]>([]),[key,K]=useState(''),[filter,F]=useState(''),[busy,B]=useState(false),[msg,M]=useState(''),[question,Q]=useState(''),[language,L]=useState('English'),[photos,P]=useState<Row[]|null>(null),[live,X]=useState(false),[crm,C]=useState(false)
+ const [observation,O]=useState('')
+ const filtered=rows.filter(r=>!filter||r.role===filter)
+ const row=filtered.find(r=>r.id===key)??filtered[0]
+ async function refresh(){const data=await request('inbox');S(data.rows);X(data.x);C(data.crm)}
+ useEffect(()=>{void refresh().catch(e=>M(e.message));const timer=setInterval(()=>void refresh().catch(()=>{}),20000);return ()=>clearInterval(timer)},[])
+ async function run(fn:()=>Promise<unknown>){B(true);M('');try{await fn();await refresh()}catch(e){M((e as Error).message)}finally{B(false)}}
+ function select(id:string){K(id);Q('');P(null);O('')}
+ function submit(fn:(v:Row,f:FormData)=>Promise<unknown>){return (e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const f=new FormData(e.currentTarget);void run(()=>fn(Object.fromEntries(f),f))}}
+ const base='inbox/'+row?.id+'/'
+ const activeStep=!row?.fields?0:['待筛选','待沟通'].includes(row.stage)?1:row.crm==='未同步'&&!['已成交','已关闭'].includes(row.stage)?2:3
+ return <><ol className="sales-steps" aria-label="社媒销售流程">{['接收线索','AI 筛选、选型与报价','销售沟通','CRM 与转化'].map((step,i)=><li key={step} aria-current={activeStep===i?'step':undefined}>{step}</li>)}</ol>
+ <details className="sales-intake" open={rows.length===0||undefined}><summary>接收社媒线索</summary><form onSubmit={submit(async v=>select((await request('inbox',v)).id))}><select name="channel" aria-label="渠道"><option>Facebook</option><option>TikTok</option><option>X</option></select><input name="author" required placeholder="客户账号或称呼"/><input name="source" type="url" placeholder="帖子或会话链接（可选）"/><textarea required name="text" placeholder="粘贴客户评论或私信"/><button disabled={busy}>保存到收件箱</button><button type="button" className="sub" disabled={busy} onClick={()=>void run(async()=>select((await request('inbox',{demo:true,channel:'Facebook',author:'示例车队采购',text:'Our fleet needs 300 sets of GYS-010. We replaced the axle with a SAF axle. Please quote.'})).id))}>载入车队演示</button></form>{live&&<form onSubmit={submit(async v=>M('已读取 '+(await request('x',v)).count+' 条帖子'))}><input name="query" required placeholder="X 搜索条件"/><button disabled={busy}>搜索近期帖子</button></form>}</details>
+ <GlobalLeadSearch onAdded={async id=>{F('');select(id);await refresh()}}/>
+ {msg&&<p role="status" className="notice">{msg}</p>}
+ <div className="social-workspace"><section><h2>线索收件箱</h2><select aria-label="筛选客户角色" value={filter} onChange={e=>{F(e.target.value);select('')}}>{['','终端客户','维修服务商','贸易商','待核实'].map(x=><option key={x} value={x}>{x||'全部客户角色'}</option>)}</select>{!filtered.length&&<p>暂无符合条件的线索。</p>}{filtered.map(r=><div className="suggestion" key={r.id}><button className={r.id===row?.id?'':'sub'} aria-pressed={r.id===row?.id} disabled={busy} onClick={()=>select(r.id)}>{r.author}</button><p>{r.channel} · {r.origin} · {r.stage} · {r.role}</p></div>)}</section>
+ {row&&<section key={row.id} className="social-detail"><h2>{row.author}</h2><p className="customer-copy">{row.text}</p>{row.contact?.email&&<p>公开邮箱 {row.contact.email}</p>}{/^https?:\/\//i.test(row.source)&&<a href={row.source} target="_blank" rel="noreferrer">打开原平台沟通</a>}<p>{row.role} · {row.intent||'意图待分析'}</p>{row.evidence&&<p>角色判断依据：“{row.evidence}”</p>}
+ <form onSubmit={submit(async()=>{await request(base+'analyze',{question,language});Q('')})}><textarea value={question} onChange={e=>Q(e.target.value)} placeholder="首次留空可分析原文；后续填客户的新问题"/><select aria-label="客户语言" value={language} onChange={e=>L(e.target.value)}>{['English','中文','Deutsch','Español','Français','Português'].map(x=><option key={x}>{x}</option>)}</select><button disabled={busy}>{busy?'处理中…':'分析需求并起草私信'}</button></form>
+ {row.fields&&<><h3>需求、选型与参考报价</h3><p>车型 {row.fields['车型']||'待确认'} · 车桥 {row.fields['车桥']||'待确认'} · 待补充 {row.missing.join('、')||'无'}</p>{row.candidates.map((r:Row)=><p key={r.id}><b>{r.model}</b> · {r.dims_raw||'尺寸待核'} · {r.catalog} {r.page} · {r.reasons.join('、')}</p>)}{!row.candidates.length&&<p>暂无可核对型号，请补充车桥、原件编码或尺寸。</p>}<h3>私信草稿</h3><p className="reply customer-copy">{row.reply}</p><button className="sub" onClick={()=>void run(async()=>{await navigator.clipboard.writeText(row.reply);M('已复制，可到原平台确认后发送')})}>复制私信</button></>}
+ <details className="social-optional"><summary>实物照片比对</summary><form onSubmit={submit(async(_,f)=>{const data=await request('photo?vision='+String(f.has('vision')),f);P(data.rows);O(data.observation)})}><input required type="file" name="file" accept="image/*"/><label><input name="vision" type="checkbox"/>同时交由视觉模型解读</label><button disabled={busy}>比对企业样图</button></form>{observation&&<p className="reply">{observation}</p>}{photos&&<div>{photos.length?photos.map(r=><p key={r.model+r.source}>{r.model} · {r.source} · 差异位数 {r.distance} <button className="sub" onClick={()=>Q('请介绍目录型号 '+r.model+' 的参数，并说明核对车桥需要哪些信息。')}>询问该候选</button></p>):<p>暂无近似样图，请补充铭牌编码、车桥位置和尺寸。</p>}</div>}
+ </details><h3>销售跟进与 CRM</h3><button className="sub" disabled={busy} onClick={()=>void run(()=>sourceConversation("social",row.id,{name:row.author,note:row.channel+" · "+row.origin,initial:row.text}))}>打开客户对话</button><form onSubmit={submit(async v=>{await request(base+'follow',v);M('跟进已保存')})}><select name="stage" defaultValue={row.stage} key={row.stage}>{stages.map(x=><option key={x}>{x}</option>)}</select><textarea name="notes" defaultValue={row.notes} placeholder="记录销售沟通和转化结果"/><button disabled={busy}>保存跟进</button></form><p>孚盟 CRM · {row.crm} {row.crm_id}</p><button disabled={busy} onClick={()=>void run(()=>request(base+'crm',{}))}>{crm&&row.origin!=='演示'?'提交 CRM 适配器':'模拟登记到 CRM'}</button></section>}</div></>
+}

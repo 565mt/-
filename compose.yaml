@@ -1,0 +1,28 @@
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      CUSTOMS_DATABASE_URL: ${CUSTOMS_DATABASE_URL:-}
+      SOCIAL_VISION_MODEL: ${SOCIAL_VISION_MODEL:-}
+      WEBSITE_INQUIRY_TOKEN: ${WEBSITE_INQUIRY_TOKEN:-}
+      X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      SOCIAL_INGEST_TOKEN: ${SOCIAL_INGEST_TOKEN:-}
+      FUMENG_ADAPTER_URL: ${FUMENG_ADAPTER_URL:-}
+      FUMENG_ADAPTER_TOKEN: ${FUMENG_ADAPTER_TOKEN:-}
+      CUSTOMS_API_URL: ${CUSTOMS_API_URL:-}
+      CUSTOMS_API_TOKEN: ${CUSTOMS_API_TOKEN:-}
+      DATA_DIR: /app/data
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      SEARCH_API_KEY: ${SEARCH_API_KEY:-}
+      SEARCH_API_URL: ${SEARCH_API_URL:-https://api.search.brave.com/res/v1/web/search}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/workspace.db}
+    volumes:
+      - workspace-data:/app/data
+volumes:
+  workspace-data:
